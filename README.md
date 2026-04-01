@@ -9,6 +9,8 @@ app_port: 8000
 
 # SecurityAuditEnv -- AI Security Compliance Audit Training
 
+**Live Environment:** https://huggingface.co/spaces/anshumanatrey/security-audit-env
+
 An OpenEnv environment that simulates real-world Vulnerability Assessment & Penetration Testing (VAPT) engagements. AI agents audit simulated corporate infrastructure -- discovering hosts, scanning services, identifying vulnerabilities, and producing structured compliance reports.
 
 ## Why This Matters
