@@ -108,15 +108,15 @@ with SecurityAuditEnv(base_url="http://localhost:8000").sync() as env:
 
 ## Baseline Scores
 
-Scores from a systematic agent that scans, tests, and submits findings:
+Scores from a deterministic audit agent (no LLM) that scans, crawls endpoints, tests each individually, parses output for detections, submits findings, and pivots through discovered vulns to unlock hidden hosts:
 
-| Scenario | Detection | Coverage | CVSS Accuracy | Final Score |
-|----------|-----------|----------|---------------|-------------|
-| Easy | 1.00 | 1.00 | 1.00 | **1.00** |
-| Medium | 0.33 | 0.50 | 0.95 | **0.45** |
-| Hard | 0.20 | 0.33 | 0.90 | **0.18** |
+| Scenario | Detection | Coverage | CVSS Accuracy | FP | Final Score |
+|----------|-----------|----------|---------------|----|-------------|
+| Easy | 1.00 | 1.00 | 1.00 | 0 | **1.00** |
+| Medium | 0.67 | 1.00 | 1.00 | 1 | **0.85** |
+| Hard | 0.30 | 1.00 | 1.00 | 1 | **0.59** |
 
-Medium and Hard scores are low because chained vulnerabilities require discovering prerequisite vulns first, and hidden hosts require pivoting through compromised systems.
+The deterministic baseline achieves full coverage (discovers all hosts via pivoting) but only finds a fraction of vulnerabilities on medium/hard because chained vulns require multi-step reasoning and the step budget is tight. An LLM agent that reasons about attack chains should outperform this baseline.
 
 ## Scoring
 
