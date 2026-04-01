@@ -98,25 +98,37 @@ with SecurityAuditEnv(base_url="http://localhost:8000").sync() as env:
 ## Tasks (3 Scenarios)
 
 ### Easy: Startup Web App Audit
-2 hosts, 3 vulnerabilities (SQLi, default credentials, exposed database). All discoverable with basic scans. Max 30 steps.
+2 hosts, 3 vulnerabilities (SQLi, default credentials, exposed database). **Labeled tool output** — tools report vulnerability type, CWE, CVSS, and remediation. Max 30 steps.
 
 ### Medium: E-commerce Platform Audit
-4 hosts (2 initially hidden behind firewall), 6 vulnerabilities (SSRF, IDOR, hardcoded secrets, unauthenticated Jenkins, weak credentials, outdated TLS). SSRF discovery reveals internal hosts. Attack chaining required. Max 50 steps.
+4 hosts (2 initially hidden behind firewall), 6 vulnerabilities (SSRF, IDOR, hardcoded secrets, unauthenticated Jenkins, weak credentials, outdated TLS). **Evidence-based output** — tools show anomalous behavior and raw evidence but do NOT label the vulnerability type, CWE, or severity. Agent must classify from evidence. SSRF discovery reveals internal hosts. Attack chaining required. Max 50 steps.
 
 ### Hard: Enterprise SOC2 Pre-Audit
-6 hosts (3 initially hidden on internal network), 10 vulnerabilities (stored XSS, BOLA, race condition, SSTI, file upload, weak creds, missing encryption, email misconfiguration, vulnerable component, missing rate limiting). Includes honeypot decoy. Progressive network discovery — compromise external hosts to pivot to internal network. Max 60 steps.
+6 hosts (3 initially hidden on internal network), 10 vulnerabilities (stored XSS, BOLA, race condition, SSTI, file upload, weak creds, missing encryption, email misconfiguration, vulnerable component, missing rate limiting). **Raw tool output** — tools return HTTP responses, timing data, error messages, and protocol traces. No labels, no hints. Agent must infer vulnerability type, severity, CWE, and impact from raw evidence. Includes honeypot decoy. Progressive network discovery. Max 60 steps.
+
+## Tool Output Difficulty Tiers
+
+The same tools produce different output detail depending on scenario difficulty:
+
+| Difficulty | Tool Output Style | Agent Must... |
+|------------|-------------------|---------------|
+| Easy | `[CRITICAL] SQL Injection DETECTED, CWE: CWE-89, CVSS: 9.8` | Read and submit the labeled finding |
+| Medium | `[!] Anomalous response — server fetched internal URL via image_url parameter` | Classify the vulnerability type and assess severity |
+| Hard | `Parameter: image_url=http://10.0.2.30:8080 → HTTP 200, body: Jenkins HTML` | Infer SSRF from raw HTTP behavior, determine CWE-918, estimate CVSS |
+
+This three-tier system ensures easy validates environment mechanics, medium tests classification ability, and hard genuinely challenges frontier model reasoning.
 
 ## Baseline Scores
 
-Scores from a deterministic audit agent (no LLM) that scans, crawls endpoints, tests each individually, parses output for detections, submits findings, and pivots through discovered vulns to unlock hidden hosts:
+Scores from a deterministic rule-based agent (no LLM) that scans, crawls endpoints, tests each individually, and attempts to parse tool output for labeled detections:
 
-| Scenario | Detection | Coverage | CVSS Accuracy | FP | Final Score |
-|----------|-----------|----------|---------------|----|-------------|
-| Easy | 1.00 | 1.00 | 1.00 | 0 | **1.00** |
-| Medium | 0.67 | 1.00 | 1.00 | 1 | **0.85** |
-| Hard | 0.30 | 1.00 | 1.00 | 1 | **0.59** |
+| Scenario | Detection | Coverage | Final Score | Why |
+|----------|-----------|----------|-------------|-----|
+| Easy | 1.00 | 1.00 | **1.00** | Labeled output — parser matches perfectly |
+| Medium | 0.00 | 0.50 | **0.07** | Evidence-based output — parser can't classify, only gets coverage |
+| Hard | 0.00 | 0.40 | **0.00** | Raw output + honeypot penalty exceeds coverage score |
 
-The deterministic baseline achieves full coverage (discovers all hosts via pivoting) but only finds a fraction of vulnerabilities on medium/hard because chained vulns require multi-step reasoning and the step budget is tight. An LLM agent that reasons about attack chains should outperform this baseline.
+The deterministic baseline fails on medium/hard because raw tool output requires reasoning to classify vulnerabilities. An LLM agent that can infer "server fetched internal URL → SSRF" or "payload {{7*7}} returned 49 → SSTI" would significantly outperform this baseline.
 
 ## Scoring
 
