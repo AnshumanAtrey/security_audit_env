@@ -265,6 +265,7 @@ def _scenario_medium() -> Dict[str, Any]:
                 "evidence": "Jenkins Groovy script console accessible without authentication. Allows arbitrary command execution on the CI/CD server. Full RCE via: 'cmd'.execute().text",
                 "remediation": "Enable authentication on Jenkins. Restrict script console access to admin users. Place Jenkins behind VPN.",
                 "discoverable_by": ["test_auth", "test_config"],
+                "requires_found": ["VULN-M001"],
             },
             {
                 "id": "VULN-M005",
@@ -278,6 +279,7 @@ def _scenario_medium() -> Dict[str, Any]:
                 "evidence": "PostgreSQL accepts connections with weak credentials: dbuser/dbpass123. Password found via brute force. No connection rate limiting.",
                 "remediation": "Enforce strong password policy. Restrict database access to application IPs. Use certificate-based authentication.",
                 "discoverable_by": ["test_auth"],
+                "requires_found": ["VULN-M003"],
             },
             {
                 "id": "VULN-M006",
@@ -435,6 +437,7 @@ def _scenario_hard() -> Dict[str, Any]:
                 "evidence": "Race condition in transfer endpoint. Sending multiple concurrent transfer requests allows double-spending — balance check and deduction are not atomic.",
                 "remediation": "Implement database-level locking on balance operations. Use idempotency keys for transfer requests.",
                 "discoverable_by": ["test_injection"],
+                "requires_found": ["VULN-H002"],
             },
             {
                 "id": "VULN-H004",
@@ -461,6 +464,7 @@ def _scenario_hard() -> Dict[str, Any]:
                 "evidence": "File upload accepts .php and .jsp files without validation. Uploaded files are accessible at /uploads/<filename> and are executed by the server.",
                 "remediation": "Whitelist allowed file types. Store uploads outside webroot. Rename files with random UUIDs.",
                 "discoverable_by": ["test_config"],
+                "requires_found": ["VULN-H004"],
             },
             {
                 "id": "VULN-H006",
@@ -487,6 +491,7 @@ def _scenario_hard() -> Dict[str, Any]:
                 "evidence": "FTP service (port 21) transfers data in plaintext. Sensitive files including financial reports are transmitted without encryption.",
                 "remediation": "Replace FTP with SFTP or FTPS. Enforce TLS for all file transfers.",
                 "discoverable_by": ["test_crypto"],
+                "requires_found": ["VULN-H006"],
             },
             {
                 "id": "VULN-H008",

@@ -56,6 +56,7 @@ class SecurityAuditEnvironment(Environment):
         self._discovered_services: dict = {}
         self._submitted_findings: list = []
         self._action_history: list = []
+        self._discovered_vulns: set = set()
         self._episode_reward: float = 0.0
 
     def reset(self, seed=None, episode_id=None, **kwargs) -> SecurityAuditObservation:
@@ -72,6 +73,7 @@ class SecurityAuditEnvironment(Environment):
         self._discovered_services = {}
         self._submitted_findings = []
         self._action_history = []
+        self._discovered_vulns = set()
         self._episode_reward = 0.0
 
         eid = episode_id or str(uuid4())
@@ -205,6 +207,7 @@ class SecurityAuditEnvironment(Environment):
             self._scenario,
             self._discovered_hosts,
             self._discovered_ports,
+            self._discovered_vulns,
         )
 
         # Update discovered state
@@ -284,6 +287,7 @@ class SecurityAuditEnvironment(Environment):
                         or f_title in v_type
                         or (v["cwe"].lower() in f_cwe)):
                     reward = 0.12
+                    self._discovered_vulns.add(v["id"])
                     break
 
         if reward == 0.0:

@@ -1,12 +1,8 @@
 """
 Security Audit Grader — Multi-dimensional scoring.
 
-Scores agent performance across:
-- Detection rate (found vs actual vulnerabilities)
-- Coverage (attack surface examined)
-- Severity accuracy (CVSS scoring precision)
-- Classification accuracy (correct CWE/OWASP mapping)
-- False positive penalty
+Scores agent performance across detection, coverage, severity accuracy,
+classification accuracy, with penalties for false positives and honeypots.
 """
 
 from typing import Any, Dict, List
@@ -18,33 +14,22 @@ def grade_episode(
     discovered_hosts: List[str],
     discovered_ports: Dict[str, List[int]],
 ) -> Dict[str, Any]:
-    """Grade a completed audit episode.
-
-    Returns a dict with component scores and final score (0.0-1.0).
-    """
+    """Grade a completed audit episode. Returns component scores and final score (0.0-1.0)."""
     ground_truth = scenario.get("vulnerabilities", [])
     all_hosts = scenario.get("hosts", {})
-    all_ports = scenario.get("ports", {})
     honeypots = scenario.get("honeypots", [])
 
-    gt_ids = {v["id"] for v in ground_truth}
-    submitted_ids = set()
-    for f in submitted_findings:
-        vid = f.get("vuln_id", f.get("finding_id", ""))
-        if vid:
-            submitted_ids.add(vid)
-
-    # 1. Detection rate — what % of real vulns did agent find?
+    # 1. Match findings to ground truth
     matched = _match_findings(ground_truth, submitted_findings)
     true_positives = len(matched)
     detection_rate = true_positives / len(ground_truth) if ground_truth else 0.0
 
-    # 2. Coverage — what % of hosts did agent examine?
+    # 2. Coverage — what % of non-honeypot hosts did agent examine?
     total_hosts = len([h for h in all_hosts if h not in honeypots])
     examined_hosts = len([h for h in discovered_hosts if h not in honeypots])
     coverage = examined_hosts / total_hosts if total_hosts > 0 else 0.0
 
-    # 3. Severity accuracy — CVSS scoring precision
+    # 3. Severity accuracy — CVSS scoring precision (stricter: ±4.0 tolerance)
     cvss_errors = []
     for gt_vuln, finding in matched:
         gt_cvss = gt_vuln.get("cvss", 0)
@@ -52,27 +37,39 @@ def grade_episode(
         try:
             cvss_errors.append(abs(float(gt_cvss) - float(submitted_cvss)))
         except (ValueError, TypeError):
-            cvss_errors.append(5.0)
+            cvss_errors.append(4.0)
 
-    avg_cvss_error = sum(cvss_errors) / len(cvss_errors) if cvss_errors else 5.0
-    severity_accuracy = max(0.0, 1.0 - avg_cvss_error / 10.0)
+    avg_cvss_error = sum(cvss_errors) / len(cvss_errors) if cvss_errors else 4.0
+    severity_accuracy = max(0.0, 1.0 - avg_cvss_error / 4.0)
 
-    # 4. Classification accuracy — correct CWE mapping
+    # 4. Classification accuracy — correct CWE mapping (exact match)
     correct_cwe = 0
+    cwe_provided = 0
     for gt_vuln, finding in matched:
-        gt_cwe = gt_vuln.get("cwe", "").lower()
-        submitted_cwe = str(finding.get("cwe", "")).lower()
-        if gt_cwe and gt_cwe in submitted_cwe:
+        gt_cwe = gt_vuln.get("cwe", "").strip()
+        submitted_cwe = str(finding.get("cwe", "")).strip()
+        if submitted_cwe:
+            cwe_provided += 1
+        if gt_cwe and gt_cwe.lower() == submitted_cwe.lower():
             correct_cwe += 1
     classification_accuracy = correct_cwe / len(matched) if matched else 0.0
 
-    # 5. False positive penalty
-    unmatched_findings = len(submitted_findings) - true_positives
-    fp_penalty = min(0.3, unmatched_findings * 0.05)
+    # CWE completeness penalty — halve classification if CWEs not provided
+    cwe_completeness = cwe_provided / len(matched) if matched else 0.0
+    classification_accuracy = classification_accuracy * (0.5 + 0.5 * cwe_completeness)
+
+    # 5. False positive penalty — uncapped, 0.05 per false positive
+    unmatched_findings = max(0, len(submitted_findings) - true_positives)
+    fp_penalty = unmatched_findings * 0.05
 
     # 6. Honeypot penalty
     honeypot_touches = len([h for h in discovered_hosts if h in honeypots])
-    honeypot_penalty = honeypot_touches * 0.10
+    honeypot_penalty = honeypot_touches * 0.15
+
+    # 7. Coverage multiplier — penalize agents that barely explored
+    coverage_multiplier = 1.0
+    if coverage < 0.5:
+        coverage_multiplier = 0.7 + 0.6 * coverage
 
     # Final weighted score
     raw_score = (
@@ -80,8 +77,8 @@ def grade_episode(
         + 0.20 * coverage
         + 0.20 * severity_accuracy
         + 0.15 * classification_accuracy
-        + 0.10 * (1.0 if true_positives > 0 else 0.0)  # exploitation proof
-    ) - fp_penalty - honeypot_penalty
+        + 0.10 * (1.0 if true_positives > 0 else 0.0)
+    ) * coverage_multiplier - fp_penalty - honeypot_penalty
 
     final_score = max(0.0, min(1.0, raw_score))
 
@@ -91,6 +88,8 @@ def grade_episode(
         "coverage": round(coverage, 4),
         "severity_accuracy": round(severity_accuracy, 4),
         "classification_accuracy": round(classification_accuracy, 4),
+        "cwe_completeness": round(cwe_completeness, 4),
+        "coverage_multiplier": round(coverage_multiplier, 4),
         "true_positives": true_positives,
         "total_vulnerabilities": len(ground_truth),
         "false_positives": unmatched_findings,
@@ -107,12 +106,10 @@ def _match_findings(
 ) -> List[tuple]:
     """Match submitted findings to ground truth vulnerabilities.
 
-    Uses fuzzy matching on host + type/endpoint to pair findings.
-    Returns list of (gt_vuln, finding) tuples.
+    Uses word overlap matching on host + type/CWE/endpoint.
     """
     matched = []
     used_gt = set()
-    used_sub = set()
 
     for i, finding in enumerate(submitted):
         f_host = finding.get("host", "")
@@ -129,20 +126,27 @@ def _match_findings(
             gt_endpoint = gt.get("endpoint", "")
             gt_cwe = gt.get("cwe", "").lower()
 
-            # Match by host + (type OR cwe OR endpoint)
-            if f_host == gt_host:
-                type_match = (
-                    gt_type in f_type
-                    or f_type in gt_type
-                    or any(word in f_type for word in gt_type.split() if len(word) > 3)
-                )
-                cwe_match = gt_cwe and gt_cwe in f_cwe
-                endpoint_match = f_endpoint and gt_endpoint and f_endpoint == gt_endpoint
+            if f_host != gt_host:
+                continue
 
-                if type_match or cwe_match or endpoint_match:
-                    matched.append((gt, finding))
-                    used_gt.add(j)
-                    used_sub.add(i)
-                    break
+            # Type matching — require >50% significant word overlap
+            gt_words = set(w.lower() for w in gt_type.replace("-", " ").split() if len(w) > 3)
+            f_words = set(w.lower() for w in f_type.replace("-", " ").split() if len(w) > 3)
+            word_overlap = len(gt_words & f_words) / len(gt_words) if gt_words else 0
+            type_match = word_overlap > 0.5
+
+            # CWE matching — exact CWE ID
+            cwe_match = gt_cwe and gt_cwe == f_cwe
+
+            # Endpoint matching — both must be defined and equal
+            endpoint_match = (
+                f_endpoint and gt_endpoint
+                and f_endpoint == gt_endpoint
+            )
+
+            if type_match or cwe_match or endpoint_match:
+                matched.append((gt, finding))
+                used_gt.add(j)
+                break
 
     return matched
