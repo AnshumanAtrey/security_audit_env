@@ -167,11 +167,13 @@ def _scenario_medium() -> Dict[str, Any]:
                 "hostname": "ci-jenkins",
                 "os": "Ubuntu 20.04 LTS",
                 "role": "CI/CD Server (Jenkins)",
+                "hidden_until": ["VULN-M001"],
             },
             "10.0.2.40": {
                 "hostname": "db-primary",
                 "os": "Ubuntu 20.04 LTS",
                 "role": "PostgreSQL Database",
+                "hidden_until": ["VULN-M001"],
             },
         },
         "ports": {
@@ -329,16 +331,19 @@ def _scenario_hard() -> Dict[str, Any]:
                 "hostname": "internal-app",
                 "os": "Ubuntu 20.04 LTS",
                 "role": "Internal Application Server",
+                "hidden_until": ["VULN-H001"],
             },
             "10.0.3.40": {
                 "hostname": "file-server",
                 "os": "Windows Server 2019",
                 "role": "File Storage Server",
+                "hidden_until": ["VULN-H001"],
             },
             "10.0.3.50": {
                 "hostname": "mail-server",
                 "os": "Ubuntu 20.04 LTS",
                 "role": "Email Server",
+                "hidden_until": ["VULN-H001"],
             },
             "10.0.3.99": {
                 "hostname": "monitoring-01",

@@ -101,10 +101,22 @@ with SecurityAuditEnv(base_url="http://localhost:8000").sync() as env:
 2 hosts, 3 vulnerabilities (SQLi, default credentials, exposed database). All discoverable with basic scans. Max 30 steps.
 
 ### Medium: E-commerce Platform Audit
-4 hosts, 6 vulnerabilities (SSRF, IDOR, hardcoded secrets, unauthenticated Jenkins, weak credentials, outdated TLS). Requires attack chaining. Max 50 steps.
+4 hosts (2 initially hidden behind firewall), 6 vulnerabilities (SSRF, IDOR, hardcoded secrets, unauthenticated Jenkins, weak credentials, outdated TLS). SSRF discovery reveals internal hosts. Attack chaining required. Max 50 steps.
 
 ### Hard: Enterprise SOC2 Pre-Audit
-6 hosts, 10 vulnerabilities (stored XSS, BOLA, race condition, SSTI, file upload, weak creds, missing encryption, email misconfiguration, vulnerable component, missing rate limiting). Includes honeypot decoy. Max 60 steps.
+6 hosts (3 initially hidden on internal network), 10 vulnerabilities (stored XSS, BOLA, race condition, SSTI, file upload, weak creds, missing encryption, email misconfiguration, vulnerable component, missing rate limiting). Includes honeypot decoy. Progressive network discovery — compromise external hosts to pivot to internal network. Max 60 steps.
+
+## Baseline Scores
+
+Scores from a systematic agent that scans, tests, and submits findings:
+
+| Scenario | Detection | Coverage | CVSS Accuracy | Final Score |
+|----------|-----------|----------|---------------|-------------|
+| Easy | 1.00 | 1.00 | 1.00 | **1.00** |
+| Medium | 0.33 | 0.50 | 0.95 | **0.45** |
+| Hard | 0.20 | 0.33 | 0.90 | **0.18** |
+
+Medium and Hard scores are low because chained vulnerabilities require discovering prerequisite vulns first, and hidden hosts require pivoting through compromised systems.
 
 ## Scoring
 
@@ -112,13 +124,15 @@ Multi-dimensional grading (0.0-1.0):
 
 | Component | Weight |
 |-----------|--------|
-| Detection Rate | 35% |
-| Coverage | 20% |
+| Detection Rate | 30% |
+| Coverage | 15% |
 | Severity Accuracy (CVSS) | 20% |
 | Classification (CWE/OWASP) | 15% |
+| Report Quality | 10% |
 | Exploitation Proof | 10% |
 | False Positive Penalty | -5% each |
-| Honeypot Penalty | -10% each |
+| Honeypot Penalty | -15% each |
+| Coverage < 50% | multiplier penalty |
 
 ## Reward Function
 

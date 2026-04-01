@@ -66,17 +66,26 @@ def grade_episode(
     honeypot_touches = len([h for h in discovered_hosts if h in honeypots])
     honeypot_penalty = honeypot_touches * 0.15
 
-    # 7. Coverage multiplier — penalize agents that barely explored
+    # 7. Report quality — bonus for complete findings (all fields present)
+    quality_fields = ["title", "host", "type", "severity", "cvss_score", "cwe", "owasp", "evidence", "remediation"]
+    field_scores = []
+    for _, finding in matched:
+        present = sum(1 for f in quality_fields if finding.get(f))
+        field_scores.append(present / len(quality_fields))
+    report_quality = sum(field_scores) / len(field_scores) if field_scores else 0.0
+
+    # 8. Coverage multiplier — penalize agents that barely explored
     coverage_multiplier = 1.0
     if coverage < 0.5:
         coverage_multiplier = 0.7 + 0.6 * coverage
 
     # Final weighted score
     raw_score = (
-        0.35 * detection_rate
-        + 0.20 * coverage
+        0.30 * detection_rate
+        + 0.15 * coverage
         + 0.20 * severity_accuracy
         + 0.15 * classification_accuracy
+        + 0.10 * report_quality
         + 0.10 * (1.0 if true_positives > 0 else 0.0)
     ) * coverage_multiplier - fp_penalty - honeypot_penalty
 
@@ -95,6 +104,7 @@ def grade_episode(
         "false_positives": unmatched_findings,
         "fp_penalty": round(fp_penalty, 4),
         "honeypot_penalty": round(honeypot_penalty, 4),
+        "report_quality": round(report_quality, 4),
         "hosts_examined": examined_hosts,
         "total_hosts": total_hosts,
     }

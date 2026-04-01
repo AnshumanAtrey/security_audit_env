@@ -103,8 +103,19 @@ def execute_tool(
 
 def _network_scan(args, scenario, discovered_hosts, discovered_ports, discovered_vulns):
     target = args.get("target", scenario.get("target_network", ""))
-    hosts = scenario.get("hosts", {})
+    all_hosts = scenario.get("hosts", {})
     ports = scenario.get("ports", {})
+    dv = discovered_vulns or set()
+
+    # Progressive discovery: filter out hidden hosts whose prereqs aren't met
+    hosts = {}
+    hidden_count = 0
+    for ip, info in all_hosts.items():
+        required = info.get("hidden_until", [])
+        if not required or all(r in dv for r in required):
+            hosts[ip] = info
+        else:
+            hidden_count += 1
 
     total_ports = 0
     lines = [
@@ -150,15 +161,22 @@ def _network_scan(args, scenario, discovered_hosts, discovered_ports, discovered
 
     lines.append(f"Nmap done: {len(hosts)} IP addresses ({len(hosts)} hosts up) scanned")
     lines.append(f"  {total_ports} open ports found across {len(hosts)} hosts")
+    if hidden_count > 0:
+        lines.append(f"  Note: {hidden_count} host(s) may exist on internal segments not directly reachable. Pivot through compromised hosts to discover them.")
     return "\n".join(lines), new_hosts, new_ports, reward
 
 
 def _service_fingerprint(args, scenario, discovered_hosts, discovered_ports, discovered_vulns):
     host = args.get("host", "")
     target_port = args.get("port")
+    dv = discovered_vulns or set()
 
-    if host not in scenario.get("hosts", {}):
+    host_info_raw = scenario.get("hosts", {}).get(host)
+    if not host_info_raw:
         return (f"Error: Host {host} not reachable. Run network_scan first.", [], {}, -0.02)
+    required = host_info_raw.get("hidden_until", [])
+    if required and not all(r in dv for r in required):
+        return (f"Error: Host {host} not reachable. It may be on an internal network segment.", [], {}, -0.02)
 
     ports = scenario.get("ports", {}).get(host, [])
     host_info = scenario["hosts"][host]
@@ -179,6 +197,14 @@ def _service_fingerprint(args, scenario, discovered_hosts, discovered_ports, dis
 
 def _web_crawl(args, scenario, discovered_hosts, discovered_ports, discovered_vulns):
     host = args.get("host", "")
+    dv = discovered_vulns or set()
+
+    host_info_raw = scenario.get("hosts", {}).get(host)
+    if host_info_raw:
+        required = host_info_raw.get("hidden_until", [])
+        if required and not all(r in dv for r in required):
+            return (f"Error: Host {host} not reachable. It may be on an internal network segment.", [], {}, -0.02)
+
     endpoints = scenario.get("web_endpoints", {}).get(host, [])
 
     if not endpoints:

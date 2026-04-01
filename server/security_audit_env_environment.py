@@ -332,6 +332,7 @@ class SecurityAuditEnvironment(Environment):
             f"  Coverage: {grades['coverage']:.2f} ({grades['hosts_examined']}/{grades['total_hosts']} hosts examined)",
             f"  Severity Accuracy: {grades['severity_accuracy']:.2f}",
             f"  Classification Accuracy: {grades['classification_accuracy']:.2f}",
+            f"  Report Quality: {grades.get('report_quality', 0):.2f}",
             f"  False Positives: {grades['false_positives']} (penalty: -{grades['fp_penalty']:.2f})",
             f"  Honeypot Penalty: -{grades['honeypot_penalty']:.2f}",
             "",
