@@ -81,6 +81,52 @@ async def run_grader(data: dict = None):
     return JSONResponse(grades)
 
 
+@app.post("/baseline")
+async def run_baseline():
+    """Trigger baseline inference and return scores for all 3 tasks.
+
+    Runs a simple deterministic audit agent (no LLM) across all scenarios
+    and returns the grader scores.
+    """
+    try:
+        from server.scenarios import get_scenario
+        from server.grader import grade_episode
+    except ImportError:
+        from .scenarios import get_scenario
+        from .grader import grade_episode
+
+    results = {}
+    for scenario_id in ["easy", "medium", "hard"]:
+        env = SecurityAuditEnvironment()
+        env.reset(scenario_id=scenario_id)
+
+        # Deterministic baseline: scan → test all endpoints → submit basic findings
+        env.step(SecurityAuditAction(
+            action_type="use_tool", tool_name="network_scan",
+            arguments={"target": get_scenario(scenario_id)["target_network"]}
+        ))
+
+        for host in list(env._discovered_hosts):
+            env.step(SecurityAuditAction(
+                action_type="use_tool", tool_name="web_crawl",
+                arguments={"host": host}
+            ))
+            for tool in ["test_injection", "test_auth", "test_config", "test_crypto", "check_secrets"]:
+                env.step(SecurityAuditAction(
+                    action_type="use_tool", tool_name=tool,
+                    arguments={"host": host}
+                ))
+
+        obs = env.step(SecurityAuditAction(action_type="generate_report"))
+        grades = obs.metadata.get("grades", {})
+        results[scenario_id] = grades
+
+    return JSONResponse({
+        "baseline_scores": {sid: g.get("final_score", 0) for sid, g in results.items()},
+        "details": results,
+    })
+
+
 def main(host: str = "0.0.0.0", port: int = 8000):
     """Entry point for direct execution."""
     import uvicorn
