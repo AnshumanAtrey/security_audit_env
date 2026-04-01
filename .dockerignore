@@ -1,0 +1,13 @@
+__pycache__
+*.pyc
+*.pyo
+.venv
+.env
+.git
+.gitignore
+*.md
+!README.md
+outputs/
+.pytest_cache
+.mypy_cache
+uv.lock
