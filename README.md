@@ -120,15 +120,23 @@ This three-tier system ensures easy validates environment mechanics, medium test
 
 ## Baseline Scores
 
-Scores from a deterministic rule-based agent (no LLM) that scans, crawls endpoints, tests each individually, and attempts to parse tool output for labeled detections:
+### LLM Agent (Gemini 2.5 Flash)
 
-| Scenario | Detection | Coverage | Final Score | Why |
-|----------|-----------|----------|-------------|-----|
-| Easy | 1.00 | 1.00 | **1.00** | Labeled output — parser matches perfectly |
-| Medium | 0.00 | 0.50 | **0.07** | Evidence-based output — parser can't classify, only gets coverage |
-| Hard | 0.00 | 0.40 | **0.00** | Raw output + honeypot penalty exceeds coverage score |
+| Scenario | Final Score | Findings | Behavior |
+|----------|-------------|----------|----------|
+| Easy | **0.75** | 2 submitted | Follows workflow, reads labeled output, submits correct findings |
+| Medium | **0.47** | 4 submitted | Discovers hidden hosts, partially classifies from evidence |
+| Hard | **0.32** | 2 submitted | Struggles to infer vuln types from raw HTTP output |
 
-The deterministic baseline fails on medium/hard because raw tool output requires reasoning to classify vulnerabilities. An LLM agent that can infer "server fetched internal URL → SSRF" or "payload {{7*7}} returned 49 → SSTI" would significantly outperform this baseline.
+### Deterministic Agent (no LLM, rule-based parser)
+
+| Scenario | Final Score | Why |
+|----------|-------------|-----|
+| Easy | **1.00** | Labeled output — regex parser matches perfectly |
+| Medium | **0.07** | Evidence-based output — parser can't classify, only gets coverage |
+| Hard | **0.00** | Raw output + honeypot penalty exceeds coverage score |
+
+The difficulty curve (easy 0.75 → medium 0.47 → hard 0.32) shows that the three-tier output system genuinely challenges LLM reasoning. Hard scenario raw output (HTTP responses, timing data) requires inferring vulnerability types that even Gemini 2.5 Flash struggles with.
 
 ## Scoring
 

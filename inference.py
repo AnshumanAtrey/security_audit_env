@@ -34,40 +34,36 @@ SCENARIOS = ["easy", "medium", "hard"]
 
 # --- SYSTEM PROMPT ---
 SYSTEM_PROMPT = textwrap.dedent("""\
-You are a professional security auditor conducting a compliance assessment.
-You interact with a security audit environment using structured JSON actions.
+You are a professional security auditor. You interact with the environment using JSON actions.
 
-AVAILABLE ACTIONS:
+ACTIONS (respond with exactly ONE JSON object, no other text):
 
-1. List available tools:
-   {"action_type": "list_tools"}
+1. {"action_type": "use_tool", "tool_name": "TOOL", "arguments": {...}}
+   Tools: network_scan (target: CIDR), web_crawl (host: IP), test_injection (host, endpoint),
+   test_xss (host, endpoint), test_auth (host), test_config (host), test_crypto (host),
+   check_secrets (host, endpoint), vulnerability_scan (host), service_fingerprint (host)
 
-2. Use a security tool:
-   {"action_type": "use_tool", "tool_name": "<tool>", "arguments": {"target": "<ip>", ...}}
+2. {"action_type": "submit_finding", "arguments": {"title": "...", "host": "IP",
+   "type": "Vuln Type", "severity": "Critical|High|Medium|Low", "cvss_score": 9.8,
+   "cwe": "CWE-XXX", "owasp": "AXX:2021 - ...", "endpoint": "/path",
+   "evidence": "...", "remediation": "..."}}
 
-   Tools: network_scan, service_fingerprint, web_crawl, vulnerability_scan,
-          test_injection, test_xss, test_auth, test_config, test_crypto, check_secrets
+3. {"action_type": "generate_report"}  (call this when done to get your score)
 
-3. Submit a finding:
-   {"action_type": "submit_finding", "arguments": {
-     "title": "...", "host": "10.0.x.x", "endpoint": "/path",
-     "type": "SQL Injection", "severity": "Critical",
-     "cvss_score": 9.8, "cwe": "CWE-89",
-     "owasp": "A03:2021 - Injection",
-     "evidence": "...", "remediation": "..."
-   }}
+STRICT WORKFLOW — follow this order, do NOT repeat steps:
+Phase 1: network_scan the target CIDR (do this ONCE, never again)
+Phase 2: web_crawl each discovered host (once per host)
+Phase 3: For each endpoint found, run test_injection, test_xss, check_secrets.
+         For each host, run test_auth, test_config, test_crypto, vulnerability_scan.
+Phase 4: For EVERY anomaly or issue in tool output, submit_finding with your assessment.
+         You MUST infer the vulnerability type, CWE, CVSS, and severity from the evidence.
+Phase 5: generate_report
 
-4. Generate final report (ends the audit):
-   {"action_type": "generate_report"}
-
-YOUR METHODOLOGY:
-1. Start by scanning the network to discover hosts
-2. For each host, fingerprint services and crawl web endpoints
-3. Test each endpoint/service for vulnerabilities
-4. Submit a structured finding for each vulnerability found
-5. When done, generate the final report
-
-RESPOND WITH ONLY A SINGLE JSON ACTION. No explanation, no markdown, just the JSON object.
+CRITICAL RULES:
+- NEVER run network_scan or service_fingerprint more than once.
+- After web_crawl, immediately start testing endpoints — do NOT re-scan.
+- When tool output shows anomalies (unusual HTTP responses, errors, data leaks), ALWAYS submit a finding.
+- You are scored on findings submitted, not on tools run. Running tools without submitting findings = 0 score.
 """).strip()
 
 
@@ -102,30 +98,50 @@ def parse_action(response_text: str) -> Optional[Dict[str, Any]]:
 
 def build_prompt(step: int, observation: Any, history: List[str], max_steps: int = 30) -> str:
     """Build user prompt from current observation and history."""
-    parts = [f"Step {step} of {max_steps}"]
-
-    if hasattr(observation, "message") and observation.message:
-        parts.append(f"\n{observation.message}")
+    parts = [f"[Step {step}/{max_steps}]"]
 
     if hasattr(observation, "tool_output") and observation.tool_output:
         output = observation.tool_output
-        if len(output) > 3000:
-            output = output[:3000] + "\n... (truncated)"
+        if len(output) > 2000:
+            output = output[:2000] + "\n... (truncated)"
         parts.append(f"\nTool Output:\n{output}")
 
-    if hasattr(observation, "discovered_hosts") and observation.discovered_hosts:
-        parts.append(f"\nDiscovered Hosts: {', '.join(observation.discovered_hosts)}")
+    if hasattr(observation, "message") and observation.message:
+        parts.append(f"\nMessage: {observation.message}")
 
+    hosts = []
+    if hasattr(observation, "discovered_hosts") and observation.discovered_hosts:
+        hosts = observation.discovered_hosts
+        parts.append(f"\nDiscovered Hosts: {', '.join(hosts)}")
+
+    findings = 0
     if hasattr(observation, "findings_submitted"):
-        parts.append(f"Findings Submitted: {observation.findings_submitted}")
+        findings = observation.findings_submitted
+        parts.append(f"Findings Submitted: {findings}")
 
     if hasattr(observation, "steps_remaining"):
         parts.append(f"Steps Remaining: {observation.steps_remaining}")
 
     if history:
-        parts.append(f"\nRecent Actions:\n" + "\n".join(history[-5:]))
+        parts.append(f"\nRecent Actions:\n" + "\n".join(history[-8:]))
 
-    parts.append("\nWhat is your next action? Respond with a single JSON object.")
+    # Phase guidance
+    has_scanned = any("network_scan" in h for h in history)
+    has_crawled = any("web_crawl" in h for h in history)
+    has_tested = any(t in " ".join(history) for t in ["test_injection", "test_xss", "test_auth", "test_config"])
+
+    if not has_scanned:
+        parts.append("\n>> Phase 1: Run network_scan on the target CIDR now.")
+    elif not has_crawled and hosts:
+        parts.append(f"\n>> Phase 2: Run web_crawl on each host: {', '.join(hosts)}")
+    elif has_crawled and not has_tested:
+        parts.append("\n>> Phase 3: Test endpoints with test_injection, test_xss, test_auth, test_config, test_crypto, check_secrets, vulnerability_scan.")
+    elif has_tested and findings == 0:
+        parts.append("\n>> Phase 4: You MUST submit_finding for any anomalies detected. Review tool output and submit findings NOW.")
+    elif step >= max_steps - 2:
+        parts.append("\n>> Phase 5: Time is almost up. Run generate_report NOW.")
+
+    parts.append("\nRespond with a single JSON action.")
     return "\n".join(parts)
 
 
