@@ -74,7 +74,26 @@ def grade_episode(
         field_scores.append(present / len(quality_fields))
     report_quality = sum(field_scores) / len(field_scores) if field_scores else 0.0
 
-    # 8. Coverage multiplier — penalize agents that barely explored
+    # 8. Pivoting score — did the agent find gateway vulns that unlock hidden hosts?
+    # This rewards agents that recognize a vulnerability is a gateway to deeper access,
+    # not just another checkbox — a uniquely VAPT concept.
+    matched_vuln_ids = set()
+    for gt_vuln, _ in matched:
+        matched_vuln_ids.add(gt_vuln["id"])
+
+    gateway_vulns = []
+    for host_info in all_hosts.values():
+        for req_id in host_info.get("hidden_until", []):
+            if req_id not in [g["id"] for g in gateway_vulns]:
+                for v in ground_truth:
+                    if v["id"] == req_id:
+                        gateway_vulns.append(v)
+                        break
+
+    gateway_found = sum(1 for v in gateway_vulns if v["id"] in matched_vuln_ids)
+    pivoting_score = gateway_found / len(gateway_vulns) if gateway_vulns else 1.0
+
+    # 9. Coverage multiplier — penalize agents that barely explored
     coverage_multiplier = 1.0
     if coverage < 0.5:
         coverage_multiplier = 0.7 + 0.6 * coverage
@@ -82,10 +101,11 @@ def grade_episode(
     # Final weighted score
     raw_score = (
         0.30 * detection_rate
-        + 0.15 * coverage
+        + 0.10 * coverage
         + 0.20 * severity_accuracy
         + 0.15 * classification_accuracy
         + 0.10 * report_quality
+        + 0.05 * pivoting_score
         + 0.10 * (1.0 if true_positives > 0 else 0.0)
     ) * coverage_multiplier - fp_penalty - honeypot_penalty
 
@@ -98,6 +118,7 @@ def grade_episode(
         "severity_accuracy": round(severity_accuracy, 4),
         "classification_accuracy": round(classification_accuracy, 4),
         "cwe_completeness": round(cwe_completeness, 4),
+        "pivoting_score": round(pivoting_score, 4),
         "coverage_multiplier": round(coverage_multiplier, 4),
         "true_positives": true_positives,
         "total_vulnerabilities": len(ground_truth),

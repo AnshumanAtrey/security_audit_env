@@ -247,8 +247,22 @@ async def run_baseline():
         grades = obs.metadata.get("grades", {}) if obs.metadata else {}
         results[scenario_id] = grades
 
+    scores = {sid: g.get("final_score", 0) for sid, g in results.items()}
+
+    # Reasoning gap: how much does performance drop when labels are removed?
+    # A perfect reasoning agent: gap = 0 (same score regardless of output format)
+    # A pure pattern matcher: gap = 1.0 (scores high on labeled, zero on raw)
+    easy_score = scores.get("easy", 0)
+    hard_score = scores.get("hard", 0)
+    reasoning_gap = round(easy_score - hard_score, 4) if easy_score > 0 else 0.0
+
     return JSONResponse({
-        "baseline_scores": {sid: g.get("final_score", 0) for sid, g in results.items()},
+        "baseline_scores": scores,
+        "reasoning_gap": reasoning_gap,
+        "reasoning_gap_interpretation": (
+            "Score difference between easy (labeled output) and hard (raw output). "
+            "Gap of 1.0 = pure pattern matcher. Gap of 0.0 = genuine reasoning."
+        ),
         "details": results,
     })
 

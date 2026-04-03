@@ -1,21 +1,68 @@
 ---
-title: Security Audit Environment Server
+title: SecurityAuditEnv -- AI Security Reasoning Benchmark
 emoji: "🔒"
 colorFrom: blue
 colorTo: purple
 sdk: docker
 app_port: 8000
+short_description: "Can your AI reason from raw evidence or just parse labels?"
 ---
 
-# SecurityAuditEnv -- AI Security Compliance Audit Training
+# SecurityAuditEnv -- Can Your AI Agent Actually Reason About Security?
 
 **Live Environment:** https://huggingface.co/spaces/anshumanatrey/security-audit-env
 
-An OpenEnv environment that simulates real-world Vulnerability Assessment & Penetration Testing (VAPT) engagements. AI agents audit simulated corporate infrastructure -- discovering hosts, scanning services, identifying vulnerabilities, and producing structured compliance reports.
+Most AI security tools parse labeled scanner output. We measure what happens when the labels disappear.
 
-## Why This Matters
+| Difficulty | Agent Sees | Regex Parser | Llama-3.3-70B |
+|---|---|---|---|
+| Easy | `[CRITICAL] SQL Injection, CWE-89, CVSS 9.8` | **1.00** | 0.85 |
+| Medium | `Server fetched internal URL via image_url parameter` | 0.07 | **0.34** |
+| Hard | `POST /login: 1000 reqs in 18.7s, 0 blocked` | 0.00 | **0.10** |
 
-Every company needs annual security audits (SOC2, GDPR, PCI-DSS). Each audit costs $10k-$50k and takes 2-5 analysts 2 weeks. This environment trains AI agents to perform the same assessments, creating a standardized benchmark for security AI capabilities.
+Same vulnerabilities. Same grader. Three levels of evidence abstraction. The gap between easy and hard IS the frontier of AI security reasoning.
+
+## Why This Matters -- The Numbers
+
+**The asymmetry is getting worse.**  Attackers now break out in **29 minutes** on average -- fastest observed: **27 seconds** (CrowdStrike Global Threat Report 2026). New vulnerabilities are exploited within **5 days** of disclosure, but defenders take **209 days** to patch (Verizon DBIR 2025). **48,185 new CVEs** were published in 2025 alone, up 20% year-over-year (NVD).
+
+**There aren't enough humans.** There are **4.8 million unfilled cybersecurity positions** worldwide (ISC2 2024). **48%** of CISOs cite skilled tester availability as their top obstacle for the third consecutive year (Pentera 2025). **67%** of U.S. enterprises were breached in the past 24 months (Pentera 2025).
+
+**Existing automation doesn't solve it.** Automated vulnerability scanners miss **69--76%** of real vulnerabilities (UPV Academic Study). Only **7%** of organizations currently use AI in cyber defense, even though **88%** plan to (BCG 2025). Pen testers spend **20--60%** of engagement time writing reports instead of finding vulnerabilities (Cyver Core 2025). Only **48%** of pentest findings ever get resolved (Cobalt State of Pentesting 2025).
+
+**The cost of failure is measured.** The average data breach costs **$4.88M** (IBM Cost of a Data Breach 2024). Enterprises spend **$187K/year** on penetration testing -- a **$2.7B** global market (Pentera 2025, Fortune Business Insights 2025). But organizations using AI/automation extensively save **$1.9M per breach** and resolve incidents **80 days faster** (IBM 2025).
+
+**The question isn't whether AI will do security testing. It's whether AI can reason from raw evidence like a human auditor -- or only parse labeled output like a regex script.** This environment measures exactly that.
+
+## What This Environment Does
+
+SecurityAuditEnv is an OpenEnv environment that simulates real-world Vulnerability Assessment & Penetration Testing (VAPT) engagements. AI agents audit simulated corporate infrastructure -- discovering hosts, scanning services, identifying vulnerabilities, and producing structured compliance reports.
+
+What makes it unique: the **three-tier output system** varies tool output detail by difficulty, measuring whether agents can reason from raw evidence (hard) or only work when answers are labeled (easy).
+
+```
+EASY (flat -- labeled output):
+  scan --> [web-app] --> test --> "SQL Injection DETECTED, CWE-89" --> submit
+           [db-server] --> test --> "Misconfiguration DETECTED" --> submit
+
+MEDIUM (2-stage -- evidence-based output, progressive discovery):
+  scan --> [frontend] --> test --> "[!] server fetched internal URL" --> classify? submit
+           [api]      --> test --> "[!] other users' data returned" --> classify? submit
+                                                                   |
+         (find SSRF, submit finding, re-scan)                      v
+           [jenkins]  --> test --> "[!] no auth on script console"  (unlocked)
+           [database] --> test --> "[!] weak credentials accepted"  (unlocked)
+
+HARD (3-stage -- raw HTTP output, progressive discovery, honeypot trap):
+  scan --> [portal]   --> test --> "POST /ticket: payload persisted, no CSP" --> infer XSS?
+           [api-gw]   --> test --> "GET /accounts/1002: other user's SSN"    --> infer BOLA?
+           [honeypot] <-- TRAP (-15% penalty if touched)
+                                                                   |
+         (find XSS, submit finding, re-scan)                       v
+           [internal] --> "{{7*7}} -> 49 in response"              (infer SSTI?)
+           [files]    --> "FTP: anonymous login, LIST /financial/"  (infer weak creds?)
+           [mail]     --> "RCPT TO: accepted, no SPF/DKIM/DMARC"   (infer misconfig?)
+```
 
 ## Quick Start
 
@@ -120,13 +167,13 @@ This three-tier system ensures easy validates environment mechanics, medium test
 
 ## Baseline Scores
 
-### LLM Agent (Gemini 2.5 Flash)
+### LLM Agent (Llama-3.3-70B-Instruct via OpenRouter)
 
 | Scenario | Final Score | Findings | Behavior |
 |----------|-------------|----------|----------|
-| Easy | **0.75** | 2 submitted | Follows workflow, reads labeled output, submits correct findings |
-| Medium | **0.47** | 4 submitted | Discovers hidden hosts, partially classifies from evidence |
-| Hard | **0.32** | 2 submitted | Struggles to infer vuln types from raw HTTP output |
+| Easy | **0.85** | 3 submitted | Follows workflow, reads labeled output, submits all 3 findings correctly |
+| Medium | **0.34** | 5 submitted | Scans hosts, submits findings but struggles to classify from evidence-based output |
+| Hard | **0.10** | 7 submitted | Finds gateway XSS and unlocks hidden hosts, but limited classification from raw HTTP output |
 
 ### Deterministic Agent (no LLM, rule-based parser)
 
@@ -136,23 +183,26 @@ This three-tier system ensures easy validates environment mechanics, medium test
 | Medium | **0.07** | Evidence-based output — parser can't classify, only gets coverage |
 | Hard | **0.00** | Raw output + honeypot penalty exceeds coverage score |
 
-The difficulty curve (easy 0.75 → medium 0.47 → hard 0.32) shows that the three-tier output system genuinely challenges LLM reasoning. Hard scenario raw output (HTTP responses, timing data) requires inferring vulnerability types that even Gemini 2.5 Flash struggles with.
+The difficulty curve (easy 0.85 -> medium 0.34 -> hard 0.10) confirms that the three-tier output system genuinely challenges LLM reasoning. Hard scenario raw output (HTTP responses, timing data) requires inferring vulnerability types that even Llama-3.3-70B struggles with.
+
+**The Reasoning Gap:** The deterministic parser scores 1.00 on easy but 0.00 on hard (reasoning gap = 1.0, pure pattern matcher). The LLM scores 0.85 on easy and 0.10 on hard (reasoning gap = 0.75). That 0.75 gap quantifies how much of the LLM's performance comes from pattern matching vs. genuine security reasoning -- exactly the capability the industry needs to close the 4.8M-person skills gap.
 
 ## Scoring
 
 Multi-dimensional grading (0.0-1.0):
 
-| Component | Weight |
-|-----------|--------|
-| Detection Rate | 30% |
-| Coverage | 15% |
-| Severity Accuracy (CVSS) | 20% |
-| Classification (CWE/OWASP) | 15% |
-| Report Quality | 10% |
-| Exploitation Proof | 10% |
-| False Positive Penalty | -5% each |
-| Honeypot Penalty | -15% each |
-| Coverage < 50% | multiplier penalty |
+| Component | Weight | What It Measures |
+|-----------|--------|------------------|
+| Detection Rate | 30% | Vulnerabilities correctly identified out of total |
+| Severity Accuracy (CVSS) | 20% | Precision of CVSS score estimates |
+| Classification (CWE/OWASP) | 15% | Correct CWE mapping for each finding |
+| Coverage | 10% | Percentage of hosts examined |
+| Report Quality | 10% | Completeness of submitted findings (all 9 fields) |
+| Exploitation Proof | 10% | Bonus for having any true positive |
+| Pivoting Score | 5% | Found gateway vulns that unlock hidden hosts |
+| False Positive Penalty | -5% each | Unmatched findings reduce score |
+| Honeypot Penalty | -15% each | Interacting with decoy hosts reduces score |
+| Coverage < 50% | multiplier | Agents that barely explored get scaled down |
 
 ## Reward Function
 
@@ -175,3 +225,25 @@ export HF_TOKEN="your-token"
 export ENV_URL="http://localhost:8000"
 python inference.py
 ```
+
+## Sources
+
+Industry statistics cited in this document:
+
+| Claim | Source | Year |
+|-------|--------|------|
+| Attackers break out in 29 min avg, 27 sec fastest | CrowdStrike Global Threat Report | 2026 |
+| 5 days to exploit, 209 days to patch | Verizon Data Breach Investigations Report | 2025 |
+| 48,185 CVEs published (+20% YoY) | NIST National Vulnerability Database | 2025 |
+| 4.8M unfilled cybersecurity positions | ISC2 Cybersecurity Workforce Study | 2024 |
+| 48% of CISOs cite tester availability as top obstacle | Pentera State of Pentesting | 2025 |
+| 67% of U.S. enterprises breached in 24 months | Pentera State of Pentesting | 2025 |
+| Automated scanners miss 69--76% of vulnerabilities | UPV Academic Study (Comparative Evaluation) | 2018 |
+| Only 7% of orgs use AI in cyber defense | BCG Cybersecurity Report | 2025 |
+| 20--60% of pen test time spent on reporting | Cyver Core Industry Survey | 2025 |
+| 48% of pentest findings never resolved | Cobalt State of Pentesting | 2025 |
+| $4.88M average data breach cost | IBM Cost of a Data Breach Report | 2024 |
+| $187K/year enterprise pen testing budget | Pentera State of Pentesting | 2025 |
+| $2.7B global pen testing market | Fortune Business Insights | 2025 |
+| AI/automation saves $1.9M per breach | IBM Cost of a Data Breach Report | 2025 |
+| AI cuts breach lifecycle by 80 days | IBM Cost of a Data Breach Report | 2025 |
