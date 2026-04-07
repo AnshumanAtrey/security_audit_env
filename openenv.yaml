@@ -4,4 +4,35 @@ type: space
 runtime: fastapi
 app: server.app:app
 port: 8000
-
+description: >
+  AI Security Audit Benchmark — trains and evaluates AI agents on real-world
+  VAPT (Vulnerability Assessment & Penetration Testing) engagements with
+  three-tier output difficulty and compliance framework mapping.
+version: "1.0.0"
+tasks:
+  - id: easy
+    name: Startup Web App Audit
+    difficulty: easy
+    max_steps: 30
+    description: "2 hosts, 3 vulnerabilities. Labeled tool output with CWE/CVSS."
+  - id: medium
+    name: E-commerce Platform Audit
+    difficulty: medium
+    max_steps: 50
+    description: "4 hosts (2 hidden), 6 vulnerabilities. Evidence-based output. Attack chaining required."
+  - id: hard
+    name: Enterprise SOC2 Pre-Audit
+    difficulty: hard
+    max_steps: 60
+    description: "6 hosts (3 hidden), 10 vulnerabilities. Raw HTTP output. Honeypot trap. Progressive discovery."
+tools:
+  - network_scan
+  - service_fingerprint
+  - web_crawl
+  - vulnerability_scan
+  - test_injection
+  - test_xss
+  - test_auth
+  - test_config
+  - test_crypto
+  - check_secrets
