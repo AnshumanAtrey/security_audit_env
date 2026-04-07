@@ -261,7 +261,7 @@ def run_scenario(client: OpenAI, scenario_id: str, env_url: str) -> float:
     # --- MANDATORY STDOUT: [END] ---
     rewards_str = ",".join(f"{r:.2f}" for r in all_rewards)
     success_str = "true" if success else "false"
-    print(f"[END]   success={success_str} steps={total_steps} score={final_score:.2f} rewards={rewards_str}", flush=True)
+    print(f"[END]   success={success_str} steps={total_steps} rewards={rewards_str}", flush=True)
 
     return final_score
 
