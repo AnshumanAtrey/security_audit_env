@@ -21,11 +21,6 @@ from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 
-
-def _log(tag: str, data: dict) -> None:
-    """Emit structured log line for programmatic evaluation parsing."""
-    print(f"[{tag}] {json.dumps(data, default=str)}", flush=True)
-
 # --- ENV VARS ---
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY", "")
@@ -36,6 +31,7 @@ SCENARIO_MAX_STEPS = {"easy": 25, "medium": 35, "hard": 45}
 TEMPERATURE = 0.1
 MAX_TOKENS = 1024
 SCENARIOS = ["easy", "medium", "hard"]
+ENV_NAME = "security_audit_env"
 
 # --- SYSTEM PROMPT ---
 SYSTEM_PROMPT = textwrap.dedent("""\
@@ -77,10 +73,7 @@ def parse_action(response_text: str) -> Optional[Dict[str, Any]]:
     if not response_text:
         return None
 
-    # Try to find JSON in the response
     text = response_text.strip()
-
-    # Remove markdown code blocks if present
     text = re.sub(r"```json\s*", "", text)
     text = re.sub(r"```\s*$", "", text)
     text = text.strip()
@@ -90,7 +83,6 @@ def parse_action(response_text: str) -> Optional[Dict[str, Any]]:
     except json.JSONDecodeError:
         pass
 
-    # Try to find JSON object in the text
     match = re.search(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", text, re.DOTALL)
     if match:
         try:
@@ -130,7 +122,6 @@ def build_prompt(step: int, observation: Any, history: List[str], max_steps: int
     if history:
         parts.append(f"\nRecent Actions:\n" + "\n".join(history[-8:]))
 
-    # Phase guidance
     has_scanned = any("network_scan" in h for h in history)
     has_crawled = any("web_crawl" in h for h in history)
     has_tested = any(t in " ".join(history) for t in ["test_injection", "test_xss", "test_auth", "test_config"])
@@ -159,17 +150,23 @@ def run_scenario(client: OpenAI, scenario_id: str, env_url: str) -> float:
     print(f"\n{'='*60}")
     print(f"Running scenario: {scenario_id} (max {max_steps} steps)")
     print(f"{'='*60}")
-    _log("START", {"scenario": scenario_id, "max_steps": max_steps, "model": MODEL_NAME})
+
+    # --- MANDATORY STDOUT: [START] ---
+    print(f"[START] task={scenario_id} env={ENV_NAME} model={MODEL_NAME}", flush=True)
+
+    all_rewards: List[float] = []
+    final_score = 0.0
+    total_steps = 0
+    success = False
+    last_error = None
 
     with SecurityAuditEnv(base_url=env_url).sync() as env:
         result = env.reset(scenario_id=scenario_id)
         observation = result.observation
         history: List[str] = []
-        final_score = 0.0
 
         for step in range(1, max_steps + 1):
             if result.done:
-                print(f"  Episode complete at step {step - 1}.")
                 break
 
             prompt = build_prompt(step, observation, history, max_steps=max_steps)
@@ -178,6 +175,7 @@ def run_scenario(client: OpenAI, scenario_id: str, env_url: str) -> float:
                 {"role": "user", "content": prompt},
             ]
 
+            last_error = None
             try:
                 completion = client.chat.completions.create(
                     model=MODEL_NAME,
@@ -188,19 +186,21 @@ def run_scenario(client: OpenAI, scenario_id: str, env_url: str) -> float:
                 )
                 response_text = completion.choices[0].message.content or ""
             except Exception as exc:
-                print(f"  Step {step}: LLM error — {exc}")
+                last_error = str(exc)
                 response_text = '{"action_type": "list_tools"}'
 
             action_dict = parse_action(response_text)
             if not action_dict:
-                print(f"  Step {step}: Could not parse action, using list_tools fallback")
+                last_error = "Could not parse LLM response as JSON"
                 action_dict = {"action_type": "list_tools"}
 
             action_type = action_dict.get("action_type", "list_tools")
             tool_name = action_dict.get("tool_name")
             arguments = action_dict.get("arguments", {})
 
-            print(f"  Step {step}: {action_type}" + (f" → {tool_name}" if tool_name else ""))
+            action_str = action_type
+            if tool_name:
+                action_str += f"({tool_name})"
 
             try:
                 action = SecurityAuditAction(
@@ -210,40 +210,58 @@ def run_scenario(client: OpenAI, scenario_id: str, env_url: str) -> float:
                 )
                 result = env.step(action)
                 observation = result.observation
+                last_error = None
             except Exception as exc:
-                print(f"  Step {step}: Env error — {exc}")
+                last_error = str(exc)
+                reward = 0.0
+                all_rewards.append(reward)
+                total_steps = step
+                # --- MANDATORY STDOUT: [STEP] ---
+                error_str = last_error.replace("\n", " ") if last_error else "null"
+                print(f"[STEP]  step={step} action={action_str} reward={reward:.2f} done=false error={error_str}", flush=True)
                 break
 
             reward = result.reward or 0.0
-            history.append(f"Step {step}: {action_type}({tool_name or ''}) → reward {reward:+.2f}")
-            print(f"    Reward: {reward:+.2f} | Done: {result.done}")
-            _log("STEP", {
-                "step": step, "action": action_type, "tool": tool_name,
-                "reward": round(reward, 4), "done": result.done,
-                "hosts": len(getattr(observation, "discovered_hosts", []) or []),
-                "findings": getattr(observation, "findings_submitted", 0),
-            })
+            all_rewards.append(reward)
+            total_steps = step
+
+            history.append(f"Step {step}: {action_str} → reward {reward:+.2f}")
+
+            # --- MANDATORY STDOUT: [STEP] ---
+            done_str = "true" if result.done else "false"
+            error_str = last_error.replace("\n", " ") if last_error else "null"
+            print(f"[STEP]  step={step} action={action_str} reward={reward:.2f} done={done_str} error={error_str}", flush=True)
 
             if result.done:
-                grades = getattr(observation, "metadata", {}).get("grades", {})
+                grades = getattr(observation, "metadata", {}) or {}
+                grades = grades.get("grades", {})
                 final_score = grades.get("final_score", reward)
-                print(f"\n  FINAL SCORE: {final_score:.4f}")
-                print(f"  Detection: {grades.get('detection_rate', 0):.2f}")
-                print(f"  Coverage: {grades.get('coverage', 0):.2f}")
-                print(f"  Severity Accuracy: {grades.get('severity_accuracy', 0):.2f}")
-                _log("END", {"scenario": scenario_id, "score": final_score, "steps": step, "grades": grades})
+                success = final_score > 0
                 break
         else:
+            # Didn't finish — force report generation
             try:
                 action = SecurityAuditAction(action_type="generate_report")
                 result = env.step(action)
-                grades = getattr(result.observation, "metadata", {}).get("grades", {})
+                reward = result.reward or 0.0
+                all_rewards.append(reward)
+                total_steps += 1
+
+                done_str = "true" if result.done else "false"
+                print(f"[STEP]  step={total_steps} action=generate_report reward={reward:.2f} done={done_str} error=null", flush=True)
+
+                grades = getattr(result.observation, "metadata", {}) or {}
+                grades = grades.get("grades", {})
                 final_score = grades.get("final_score", 0.0)
-                print(f"\n  FINAL SCORE (forced report): {final_score:.4f}")
-                _log("END", {"scenario": scenario_id, "score": final_score, "steps": max_steps, "grades": grades})
-            except Exception:
+                success = final_score > 0
+            except Exception as exc:
                 final_score = 0.0
-                _log("END", {"scenario": scenario_id, "score": 0.0, "error": True})
+                last_error = str(exc)
+
+    # --- MANDATORY STDOUT: [END] ---
+    rewards_str = ",".join(f"{r:.2f}" for r in all_rewards)
+    success_str = "true" if success else "false"
+    print(f"[END]   success={success_str} steps={total_steps} score={final_score:.2f} rewards={rewards_str}", flush=True)
 
     return final_score
 
@@ -255,8 +273,6 @@ def main():
     print(f"Model: {MODEL_NAME}")
 
     llm_client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
-
-    # Default to local server if no env URL provided
     env_url = os.getenv("ENV_URL", "http://localhost:8000")
 
     scores = {}
@@ -276,7 +292,6 @@ def main():
     avg = sum(scores.values()) / len(scores) if scores else 0.0
     print(f"  {'average':10s}: {avg:.4f}")
     print(f"{'='*60}")
-    _log("SUMMARY", {"scores": scores, "average": round(avg, 4)})
 
 
 if __name__ == "__main__":
