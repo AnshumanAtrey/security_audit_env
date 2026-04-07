@@ -21,6 +21,11 @@ from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 
+
+def _log(tag: str, data: dict) -> None:
+    """Emit structured log line for programmatic evaluation parsing."""
+    print(f"[{tag}] {json.dumps(data, default=str)}", flush=True)
+
 # --- ENV VARS ---
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY", "")
@@ -154,6 +159,7 @@ def run_scenario(client: OpenAI, scenario_id: str, env_url: str) -> float:
     print(f"\n{'='*60}")
     print(f"Running scenario: {scenario_id} (max {max_steps} steps)")
     print(f"{'='*60}")
+    _log("START", {"scenario": scenario_id, "max_steps": max_steps, "model": MODEL_NAME})
 
     with SecurityAuditEnv(base_url=env_url).sync() as env:
         result = env.reset(scenario_id=scenario_id)
@@ -211,26 +217,33 @@ def run_scenario(client: OpenAI, scenario_id: str, env_url: str) -> float:
             reward = result.reward or 0.0
             history.append(f"Step {step}: {action_type}({tool_name or ''}) → reward {reward:+.2f}")
             print(f"    Reward: {reward:+.2f} | Done: {result.done}")
+            _log("STEP", {
+                "step": step, "action": action_type, "tool": tool_name,
+                "reward": round(reward, 4), "done": result.done,
+                "hosts": len(getattr(observation, "discovered_hosts", []) or []),
+                "findings": getattr(observation, "findings_submitted", 0),
+            })
 
             if result.done:
-                # Extract final score from metadata
                 grades = getattr(observation, "metadata", {}).get("grades", {})
                 final_score = grades.get("final_score", reward)
                 print(f"\n  FINAL SCORE: {final_score:.4f}")
                 print(f"  Detection: {grades.get('detection_rate', 0):.2f}")
                 print(f"  Coverage: {grades.get('coverage', 0):.2f}")
                 print(f"  Severity Accuracy: {grades.get('severity_accuracy', 0):.2f}")
+                _log("END", {"scenario": scenario_id, "score": final_score, "steps": step, "grades": grades})
                 break
         else:
-            # Didn't finish — force report generation
             try:
                 action = SecurityAuditAction(action_type="generate_report")
                 result = env.step(action)
                 grades = getattr(result.observation, "metadata", {}).get("grades", {})
                 final_score = grades.get("final_score", 0.0)
                 print(f"\n  FINAL SCORE (forced report): {final_score:.4f}")
+                _log("END", {"scenario": scenario_id, "score": final_score, "steps": max_steps, "grades": grades})
             except Exception:
                 final_score = 0.0
+                _log("END", {"scenario": scenario_id, "score": 0.0, "error": True})
 
     return final_score
 
@@ -263,6 +276,7 @@ def main():
     avg = sum(scores.values()) / len(scores) if scores else 0.0
     print(f"  {'average':10s}: {avg:.4f}")
     print(f"{'='*60}")
+    _log("SUMMARY", {"scores": scores, "average": round(avg, 4)})
 
 
 if __name__ == "__main__":

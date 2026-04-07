@@ -105,6 +105,7 @@ def _scenario_easy() -> Dict[str, Any]:
                 "evidence": "Parameter 'username' vulnerable: ' OR 1=1-- bypasses authentication. MySQL error exposed in response.",
                 "remediation": "Use parameterized queries or prepared statements for all database operations.",
                 "discoverable_by": ["test_injection"],
+                "compliance_controls": ["Input Validation", "Secure Coding"],
             },
             {
                 "id": "VULN-E002",
@@ -118,6 +119,7 @@ def _scenario_easy() -> Dict[str, Any]:
                 "evidence": "Admin panel accessible with default credentials admin:admin123. No account lockout after failed attempts.",
                 "remediation": "Change default credentials immediately. Implement account lockout and MFA.",
                 "discoverable_by": ["test_auth"],
+                "compliance_controls": ["Authentication", "Credential Management"],
             },
             {
                 "id": "VULN-E003",
@@ -131,6 +133,7 @@ def _scenario_easy() -> Dict[str, Any]:
                 "evidence": "MySQL port 3306 is accessible from the public internet. No firewall rules restricting access. Remote root login enabled.",
                 "remediation": "Restrict MySQL access to application server IPs only using firewall rules. Disable remote root login.",
                 "discoverable_by": ["network_scan", "test_config"],
+                "compliance_controls": ["Network Security", "Access Control"],
             },
         ],
         "honeypots": [],
@@ -228,6 +231,7 @@ def _scenario_medium() -> Dict[str, Any]:
                 "evidence": "The image_url parameter accepts internal URLs. Requesting image_url=http://10.0.2.30:8080 returns Jenkins dashboard HTML. Can be used to scan internal network.",
                 "remediation": "Validate and whitelist allowed URL schemes and domains. Block requests to private IP ranges.",
                 "discoverable_by": ["test_injection"],
+                "compliance_controls": ["PCI-DSS 6.5.9 — SSRF", "PCI-DSS 6.5.1 — Injection Flaws"],
             },
             {
                 "id": "VULN-M002",
@@ -241,6 +245,7 @@ def _scenario_medium() -> Dict[str, Any]:
                 "evidence": "Changing the order ID parameter to another user's order ID returns their order details including PII and payment info. No authorization check on resource ownership.",
                 "remediation": "Implement proper authorization checks. Verify the authenticated user owns the requested resource.",
                 "discoverable_by": ["test_auth"],
+                "compliance_controls": ["PCI-DSS 6.5.8 — Improper Access Control", "PCI-DSS 7.1 — Need to Know"],
             },
             {
                 "id": "VULN-M003",
@@ -254,6 +259,7 @@ def _scenario_medium() -> Dict[str, Any]:
                 "evidence": "Hardcoded API key found in JavaScript bundle: STRIPE_SECRET_KEY=sk_live_EXAMPLE_REDACTED_KEY_HERE. Also contains internal API URLs.",
                 "remediation": "Remove hardcoded secrets from client-side code. Use environment variables and server-side proxies for API keys.",
                 "discoverable_by": ["check_secrets"],
+                "compliance_controls": ["PCI-DSS 6.5.3 — Insecure Cryptographic Storage", "PCI-DSS 3.4 — Render PAN Unreadable"],
             },
             {
                 "id": "VULN-M004",
@@ -268,6 +274,7 @@ def _scenario_medium() -> Dict[str, Any]:
                 "remediation": "Enable authentication on Jenkins. Restrict script console access to admin users. Place Jenkins behind VPN.",
                 "discoverable_by": ["test_auth", "test_config"],
                 "requires_found": ["VULN-M001"],
+                "compliance_controls": ["PCI-DSS 2.1 — Default Passwords", "PCI-DSS 6.5.10 — Broken Auth/Session"],
             },
             {
                 "id": "VULN-M005",
@@ -282,6 +289,7 @@ def _scenario_medium() -> Dict[str, Any]:
                 "remediation": "Enforce strong password policy. Restrict database access to application IPs. Use certificate-based authentication.",
                 "discoverable_by": ["test_auth"],
                 "requires_found": ["VULN-M003"],
+                "compliance_controls": ["PCI-DSS 8.2.1 — Unique User ID", "PCI-DSS 8.2.3 — Password Complexity"],
             },
             {
                 "id": "VULN-M006",
@@ -295,6 +303,7 @@ def _scenario_medium() -> Dict[str, Any]:
                 "evidence": "Server supports TLS 1.0 and TLS 1.1 which are deprecated. Weak cipher suites detected: TLS_RSA_WITH_3DES_EDE_CBC_SHA.",
                 "remediation": "Disable TLS 1.0 and 1.1. Configure server to support only TLS 1.2+ with strong cipher suites.",
                 "discoverable_by": ["test_crypto"],
+                "compliance_controls": ["PCI-DSS 4.1 — Strong Cryptography", "PCI-DSS 2.2.3 — Secure Protocols"],
             },
         ],
         "honeypots": [],
@@ -346,9 +355,9 @@ def _scenario_hard() -> Dict[str, Any]:
                 "hidden_until": ["VULN-H001"],
             },
             "10.0.3.99": {
-                "hostname": "monitoring-01",
+                "hostname": "staging-app-02",
                 "os": "Ubuntu 22.04 LTS",
-                "role": "Monitoring & Alerting",
+                "role": "Staging Application Server",
                 "is_honeypot": True,
             },
         },
@@ -378,8 +387,8 @@ def _scenario_hard() -> Dict[str, Any]:
             ],
             "10.0.3.99": [
                 {"port": 22, "service": "ssh", "version": "OpenSSH 8.9p1", "state": "open"},
-                {"port": 9090, "service": "http", "version": "Prometheus 2.40.0", "state": "open"},
-                {"port": 3000, "service": "http", "version": "Grafana 9.3.0", "state": "open"},
+                {"port": 443, "service": "https", "version": "nginx 1.22.0", "state": "open"},
+                {"port": 8080, "service": "http", "version": "Apache Tomcat 9.0.65", "state": "open"},
             ],
         },
         "web_endpoints": {
@@ -416,6 +425,7 @@ def _scenario_hard() -> Dict[str, Any]:
                 "evidence": "The 'message' field in support tickets does not sanitize HTML. Payload <script>document.cookie</script> is stored and rendered to support agents.",
                 "remediation": "Sanitize all user input. Use output encoding. Implement Content-Security-Policy headers.",
                 "discoverable_by": ["test_xss"],
+                "compliance_controls": ["CC6.1 — Logical Access Security", "CC7.2 — System Monitoring"],
             },
             {
                 "id": "VULN-H002",
@@ -429,6 +439,7 @@ def _scenario_hard() -> Dict[str, Any]:
                 "evidence": "Enumerating account IDs (sequential integers) returns other customers' account details including balance, transaction history, and PII.",
                 "remediation": "Use UUIDs instead of sequential IDs. Implement authorization checks verifying account ownership.",
                 "discoverable_by": ["test_auth"],
+                "compliance_controls": ["CC6.1 — Logical Access Security", "CC6.3 — Role-Based Access"],
             },
             {
                 "id": "VULN-H003",
@@ -443,6 +454,7 @@ def _scenario_hard() -> Dict[str, Any]:
                 "remediation": "Implement database-level locking on balance operations. Use idempotency keys for transfer requests.",
                 "discoverable_by": ["test_injection"],
                 "requires_found": ["VULN-H002"],
+                "compliance_controls": ["CC8.1 — Change Management", "PI1.1 — Processing Integrity"],
             },
             {
                 "id": "VULN-H004",
@@ -456,6 +468,7 @@ def _scenario_hard() -> Dict[str, Any]:
                 "evidence": "The 'template' parameter is processed by Jinja2 without sandboxing. Payload {{7*7}} returns 49. Full RCE possible via __import__('os').popen('id').read().",
                 "remediation": "Use Jinja2 SandboxedEnvironment. Never pass user input directly as template content.",
                 "discoverable_by": ["test_injection"],
+                "compliance_controls": ["CC6.6 — System Boundaries", "CC6.1 — Logical Access Security"],
             },
             {
                 "id": "VULN-H005",
@@ -470,6 +483,7 @@ def _scenario_hard() -> Dict[str, Any]:
                 "remediation": "Whitelist allowed file types. Store uploads outside webroot. Rename files with random UUIDs.",
                 "discoverable_by": ["test_config"],
                 "requires_found": ["VULN-H004"],
+                "compliance_controls": ["CC6.6 — System Boundaries", "CC7.2 — System Monitoring"],
             },
             {
                 "id": "VULN-H006",
@@ -483,6 +497,7 @@ def _scenario_hard() -> Dict[str, Any]:
                 "evidence": "FTP server accepts anonymous login. SMB share 'Documents' accessible with guest credentials. Contains sensitive financial reports and employee data.",
                 "remediation": "Disable anonymous FTP access. Require authentication for all SMB shares. Implement least privilege access.",
                 "discoverable_by": ["test_auth"],
+                "compliance_controls": ["CC6.1 — Logical Access Security", "CC6.2 — Prior to Access"],
             },
             {
                 "id": "VULN-H007",
@@ -497,6 +512,7 @@ def _scenario_hard() -> Dict[str, Any]:
                 "remediation": "Replace FTP with SFTP or FTPS. Enforce TLS for all file transfers.",
                 "discoverable_by": ["test_crypto"],
                 "requires_found": ["VULN-H006"],
+                "compliance_controls": ["CC6.7 — Restrict Data Transmission", "C1.1 — Confidentiality Commitments"],
             },
             {
                 "id": "VULN-H008",
@@ -510,6 +526,7 @@ def _scenario_hard() -> Dict[str, Any]:
                 "evidence": "SMTP server allows open relay from internal network. No SPF, DKIM, or DMARC records configured. Susceptible to email spoofing.",
                 "remediation": "Configure SPF, DKIM, and DMARC records. Restrict SMTP relay to authenticated users only.",
                 "discoverable_by": ["test_config"],
+                "compliance_controls": ["CC6.6 — System Boundaries", "CC7.1 — Detect Changes"],
             },
             {
                 "id": "VULN-H009",
@@ -523,6 +540,7 @@ def _scenario_hard() -> Dict[str, Any]:
                 "evidence": "Apache Tomcat 9.0.31 is vulnerable to CVE-2020-1938 (GhostCat). AJP connector on port 8009 allows file read and potential RCE.",
                 "remediation": "Upgrade Tomcat to latest version. Disable AJP connector if not needed. Restrict AJP access to localhost.",
                 "discoverable_by": ["vulnerability_scan"],
+                "compliance_controls": ["CC7.1 — Detect Changes", "CC8.1 — Change Management"],
             },
             {
                 "id": "VULN-H010",
@@ -536,6 +554,7 @@ def _scenario_hard() -> Dict[str, Any]:
                 "evidence": "Login endpoint allows unlimited authentication attempts. No CAPTCHA, no account lockout, no rate limiting detected after 1000+ requests.",
                 "remediation": "Implement rate limiting (e.g., 5 attempts per minute). Add account lockout after 10 failed attempts. Deploy CAPTCHA.",
                 "discoverable_by": ["test_auth"],
+                "compliance_controls": ["CC6.1 — Logical Access Security", "CC6.8 — Prevent Unauthorized Access"],
             },
         ],
         "honeypots": ["10.0.3.99"],

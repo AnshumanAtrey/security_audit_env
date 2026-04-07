@@ -82,6 +82,18 @@ class SecurityAuditObservation(Observation):
         description="Human-readable status message",
     )
 
+    truncated: bool = Field(
+        default=False,
+        description="True if episode ended due to step limit (truncation), "
+                    "False if agent called generate_report (termination). "
+                    "Important for RL value function estimation.",
+    )
+
+    current_phase: str = Field(
+        default="reconnaissance",
+        description="Current audit phase: reconnaissance, enumeration, exploitation, or reporting",
+    )
+
 
 class SecurityAuditState(State):
     """Full episode state for the security audit.
@@ -95,6 +107,6 @@ class SecurityAuditState(State):
     max_steps: int = Field(default=50, description="Maximum steps allowed")
     discovered_hosts: List[str] = Field(default_factory=list)
     discovered_ports: Dict[str, List[int]] = Field(default_factory=dict)
-    discovered_services: Dict[str, str] = Field(default_factory=dict)
+    discovered_services: Dict[str, List[str]] = Field(default_factory=dict)
     submitted_findings: List[Dict[str, Any]] = Field(default_factory=list)
     total_reward: float = Field(default=0.0)

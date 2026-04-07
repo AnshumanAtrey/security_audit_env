@@ -195,14 +195,16 @@ Multi-dimensional grading (0.0-1.0):
 |-----------|--------|------------------|
 | Detection Rate | 30% | Vulnerabilities correctly identified out of total |
 | Severity Accuracy (CVSS) | 20% | Precision of CVSS score estimates |
-| Classification (CWE/OWASP) | 15% | Correct CWE mapping for each finding |
-| Coverage | 10% | Percentage of hosts examined |
-| Report Quality | 10% | Completeness of submitted findings (all 9 fields) |
-| Exploitation Proof | 10% | Bonus for having any true positive |
-| Pivoting Score | 5% | Found gateway vulns that unlock hidden hosts |
-| False Positive Penalty | -5% each | Unmatched findings reduce score |
+| Classification (CWE + OWASP) | 15% | 70% CWE exact match + 30% OWASP category match, with completeness penalty |
+| Report Quality | 10% | 60% field completeness (9 fields) + 40% narrative quality (evidence/remediation depth) |
+| Coverage | 5% | Percentage of non-honeypot hosts examined |
+| Pivoting Score | 5% | Found gateway vulns that unlock hidden hosts (uniquely VAPT) |
+| Exploitation Proof | 5% | Proportional: `true_positives / total_vulnerabilities` |
+| Compliance Coverage | 5% | Fraction of compliance controls addressed (PCI-DSS/SOC2/Generic) |
+| Any True Positive | 5% | Bonus for finding at least one real vulnerability |
+| False Positive Penalty | escalating | -0.03 first, +0.01 per additional FP (caps at -0.08 each) |
 | Honeypot Penalty | -15% each | Interacting with decoy hosts reduces score |
-| Coverage < 50% | multiplier | Agents that barely explored get scaled down |
+| Coverage < 50% | multiplier | `0.7 + 0.6 * coverage` applied to raw score |
 
 ## Reward Function
 
@@ -247,3 +249,32 @@ Industry statistics cited in this document:
 | $2.7B global pen testing market | Fortune Business Insights | 2025 |
 | AI/automation saves $1.9M per breach | IBM Cost of a Data Breach Report | 2025 |
 | AI cuts breach lifecycle by 80 days | IBM Cost of a Data Breach Report | 2025 |
+
+## Testing
+
+57+ tests covering grader determinism, score bounds, finding matching, penalties, compliance mapping, environment reset/step, progressive discovery, honeypot behavior, reward scaling, phase tracking, truncation, seed variation, and baseline score reproduction.
+
+```bash
+pip install pytest
+PYTHONPATH=. pytest tests/ -v
+```
+
+## Related Work & Competitive Positioning
+
+This environment addresses gaps identified across the AI security benchmarking landscape:
+
+| Benchmark | Limitation | SecurityAuditEnv |
+|-----------|-----------|-----------------|
+| [AutoPenBench](https://arxiv.org/abs/2410.03225) | Binary pass/fail only | Multi-dimensional scoring (10+ components) |
+| [PentestEval](https://arxiv.org/html/2512.14233v1) | No compliance dimension | PCI-DSS / SOC2 / Generic framework mapping |
+| [HTB AI Range](https://www.hackthebox.ai/benchmarks) | No false-positive measurement | Escalating FP penalty + honeypot deception |
+| [CyberBattleSim](https://github.com/microsoft/CyberBattleSim) | Purely abstract (nodes/edges) | Realistic hosts, services, CVEs, OWASP Top 10 |
+| [BoxPwnr](https://github.com/0ca/BoxPwnr) | No report quality assessment | Field completeness + narrative quality scoring |
+| [PenGym](https://www.sciencedirect.com/science/article/pii/S0167404824004450) | Requires real infrastructure | Self-contained, deterministic, reproducible |
+
+Key research validating our design:
+- **ARTEMIS** (arXiv:2512.09882): First live enterprise AI vs human pentest — AI has high FP rates. Our escalating FP penalty and honeypot system directly address this.
+- **MAPTA** (arXiv:2508.20816): Multi-agent pentesting achieves 76.9% on SSRF/misconfig but 0% on blind SQLi — our three-tier output tests exactly this reasoning gap.
+- **Reward Machines** (arXiv:2405.15908): Phase-decomposed rewards accelerate RL training — our environment tracks audit phases (reconnaissance → enumeration → exploitation → reporting).
+
+**SecurityAuditEnv is the only compliance-aware security benchmark** that maps vulnerability findings to real compliance framework controls (PCI-DSS requirements, SOC2 trust service criteria).

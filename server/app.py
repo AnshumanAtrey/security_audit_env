@@ -23,7 +23,18 @@ except ImportError:
     from .security_audit_env_environment import SecurityAuditEnvironment
     from .scenarios import list_scenarios
 
+from typing import Any, Dict, List
+from pydantic import BaseModel, Field
 from fastapi.responses import JSONResponse
+
+
+class GraderRequest(BaseModel):
+    """Request body for the /grader endpoint."""
+    scenario_id: str = Field(default="easy", description="Scenario to grade against")
+    findings: List[Dict[str, Any]] = Field(default_factory=list)
+    discovered_hosts: List[str] = Field(default_factory=list)
+    discovered_ports: Dict[str, List[int]] = Field(default_factory=dict)
+    steps_used: int = Field(default=0)
 
 app = create_app(
     SecurityAuditEnvironment,
@@ -32,6 +43,14 @@ app = create_app(
     env_name="security_audit_env",
     max_concurrent_envs=4,
 )
+
+
+# --- Health check ---
+
+@app.get("/health")
+async def health():
+    """Health check endpoint for container orchestration."""
+    return {"status": "ok", "environment": "security_audit_env"}
 
 
 # --- Custom Hackathon Endpoints ---
@@ -53,16 +72,8 @@ async def get_tasks():
 
 
 @app.post("/grader")
-async def run_grader(data: dict = None):
-    """Return grader scores for a completed episode.
-
-    Expects: { "scenario_id": "easy"|"medium"|"hard",
-               "findings": [...], "discovered_hosts": [...],
-               "discovered_ports": {...} }
-    """
-    if not data:
-        return JSONResponse({"error": "POST body required"}, status_code=400)
-
+async def run_grader(data: GraderRequest):
+    """Return grader scores for a completed episode."""
     try:
         from server.scenarios import get_scenario
         from server.grader import grade_episode
@@ -70,13 +81,10 @@ async def run_grader(data: dict = None):
         from .scenarios import get_scenario
         from .grader import grade_episode
 
-    scenario_id = data.get("scenario_id", "easy")
-    scenario = get_scenario(scenario_id)
+    scenario = get_scenario(data.scenario_id)
     grades = grade_episode(
-        scenario,
-        data.get("findings", []),
-        data.get("discovered_hosts", []),
-        data.get("discovered_ports", {}),
+        scenario, data.findings, data.discovered_hosts,
+        data.discovered_ports, steps_used=data.steps_used,
     )
     return JSONResponse(grades)
 
