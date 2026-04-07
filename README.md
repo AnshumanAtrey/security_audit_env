@@ -5,6 +5,8 @@ colorFrom: blue
 colorTo: purple
 sdk: docker
 app_port: 8000
+tags:
+  - openenv
 short_description: "Can your AI reason from raw evidence or just parse labels?"
 ---
 

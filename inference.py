@@ -23,8 +23,11 @@ from openai import OpenAI
 
 # --- ENV VARS ---
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY", "")
 MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Llama-3.3-70B-Instruct")
+HF_TOKEN = os.getenv("HF_TOKEN")
+
+if HF_TOKEN is None:
+    raise ValueError("HF_TOKEN environment variable is required")
 
 # --- CONFIG ---
 SCENARIO_MAX_STEPS = {"easy": 25, "medium": 35, "hard": 45}
@@ -160,108 +163,111 @@ def run_scenario(client: OpenAI, scenario_id: str, env_url: str) -> float:
     success = False
     last_error = None
 
-    with SecurityAuditEnv(base_url=env_url).sync() as env:
-        result = env.reset(scenario_id=scenario_id)
-        observation = result.observation
-        history: List[str] = []
+    try:
+        with SecurityAuditEnv(base_url=env_url).sync() as env:
+            result = env.reset(scenario_id=scenario_id)
+            observation = result.observation
+            history: List[str] = []
 
-        for step in range(1, max_steps + 1):
-            if result.done:
-                break
+            for step in range(1, max_steps + 1):
+                if result.done:
+                    break
 
-            prompt = build_prompt(step, observation, history, max_steps=max_steps)
-            messages = [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ]
+                prompt = build_prompt(step, observation, history, max_steps=max_steps)
+                messages = [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ]
 
-            last_error = None
-            try:
-                completion = client.chat.completions.create(
-                    model=MODEL_NAME,
-                    messages=messages,
-                    temperature=TEMPERATURE,
-                    max_tokens=MAX_TOKENS,
-                    stream=False,
-                )
-                response_text = completion.choices[0].message.content or ""
-            except Exception as exc:
-                last_error = str(exc)
-                response_text = '{"action_type": "list_tools"}'
-
-            action_dict = parse_action(response_text)
-            if not action_dict:
-                last_error = "Could not parse LLM response as JSON"
-                action_dict = {"action_type": "list_tools"}
-
-            action_type = action_dict.get("action_type", "list_tools")
-            tool_name = action_dict.get("tool_name")
-            arguments = action_dict.get("arguments", {})
-
-            action_str = action_type
-            if tool_name:
-                action_str += f"({tool_name})"
-
-            try:
-                action = SecurityAuditAction(
-                    action_type=action_type,
-                    tool_name=tool_name,
-                    arguments=arguments,
-                )
-                result = env.step(action)
-                observation = result.observation
                 last_error = None
-            except Exception as exc:
-                last_error = str(exc)
-                reward = 0.0
-                all_rewards.append(reward)
-                total_steps = step
-                # --- MANDATORY STDOUT: [STEP] ---
-                error_str = last_error.replace("\n", " ") if last_error else "null"
-                print(f"[STEP]  step={step} action={action_str} reward={reward:.2f} done=false error={error_str}", flush=True)
-                break
+                try:
+                    completion = client.chat.completions.create(
+                        model=MODEL_NAME,
+                        messages=messages,
+                        temperature=TEMPERATURE,
+                        max_tokens=MAX_TOKENS,
+                        stream=False,
+                    )
+                    response_text = completion.choices[0].message.content or ""
+                except Exception as exc:
+                    last_error = str(exc)
+                    response_text = '{"action_type": "list_tools"}'
 
-            reward = result.reward or 0.0
-            all_rewards.append(reward)
-            total_steps = step
+                action_dict = parse_action(response_text)
+                if not action_dict:
+                    last_error = "Could not parse LLM response as JSON"
+                    action_dict = {"action_type": "list_tools"}
 
-            history.append(f"Step {step}: {action_str} → reward {reward:+.2f}")
+                action_type = action_dict.get("action_type", "list_tools")
+                tool_name = action_dict.get("tool_name")
+                arguments = action_dict.get("arguments", {})
 
-            # --- MANDATORY STDOUT: [STEP] ---
-            done_str = "true" if result.done else "false"
-            error_str = last_error.replace("\n", " ") if last_error else "null"
-            print(f"[STEP]  step={step} action={action_str} reward={reward:.2f} done={done_str} error={error_str}", flush=True)
+                action_str = action_type
+                if tool_name:
+                    action_str += f"({tool_name})"
 
-            if result.done:
-                grades = getattr(observation, "metadata", {}) or {}
-                grades = grades.get("grades", {})
-                final_score = grades.get("final_score", reward)
-                success = final_score > 0
-                break
-        else:
-            # Didn't finish — force report generation
-            try:
-                action = SecurityAuditAction(action_type="generate_report")
-                result = env.step(action)
+                try:
+                    action = SecurityAuditAction(
+                        action_type=action_type,
+                        tool_name=tool_name,
+                        arguments=arguments,
+                    )
+                    result = env.step(action)
+                    observation = result.observation
+                    last_error = None
+                except Exception as exc:
+                    last_error = str(exc)
+                    reward = 0.0
+                    all_rewards.append(reward)
+                    total_steps = step
+                    # --- MANDATORY STDOUT: [STEP] ---
+                    error_str = last_error.replace("\n", " ") if last_error else "null"
+                    print(f"[STEP]  step={step} action={action_str} reward={reward:.2f} done=false error={error_str}", flush=True)
+                    break
+
                 reward = result.reward or 0.0
                 all_rewards.append(reward)
-                total_steps += 1
+                total_steps = step
 
+                history.append(f"Step {step}: {action_str} → reward {reward:+.2f}")
+
+                # --- MANDATORY STDOUT: [STEP] ---
                 done_str = "true" if result.done else "false"
-                print(f"[STEP]  step={total_steps} action=generate_report reward={reward:.2f} done={done_str} error=null", flush=True)
+                error_str = last_error.replace("\n", " ") if last_error else "null"
+                print(f"[STEP]  step={step} action={action_str} reward={reward:.2f} done={done_str} error={error_str}", flush=True)
 
-                grades = getattr(result.observation, "metadata", {}) or {}
-                grades = grades.get("grades", {})
-                final_score = grades.get("final_score", 0.0)
-                success = final_score > 0
-            except Exception as exc:
-                final_score = 0.0
-                last_error = str(exc)
+                if result.done:
+                    grades = getattr(observation, "metadata", {}) or {}
+                    grades = grades.get("grades", {})
+                    final_score = grades.get("final_score", reward)
+                    success = final_score > 0
+                    break
+            else:
+                # Didn't finish — force report generation
+                try:
+                    action = SecurityAuditAction(action_type="generate_report")
+                    result = env.step(action)
+                    reward = result.reward or 0.0
+                    all_rewards.append(reward)
+                    total_steps += 1
 
-    # --- MANDATORY STDOUT: [END] ---
-    rewards_str = ",".join(f"{r:.2f}" for r in all_rewards)
-    success_str = "true" if success else "false"
-    print(f"[END]   success={success_str} steps={total_steps} rewards={rewards_str}", flush=True)
+                    done_str = "true" if result.done else "false"
+                    print(f"[STEP]  step={total_steps} action=generate_report reward={reward:.2f} done={done_str} error=null", flush=True)
+
+                    grades = getattr(result.observation, "metadata", {}) or {}
+                    grades = grades.get("grades", {})
+                    final_score = grades.get("final_score", 0.0)
+                    success = final_score > 0
+                except Exception as exc:
+                    final_score = 0.0
+                    last_error = str(exc)
+    except Exception as exc:
+        last_error = str(exc)
+    finally:
+        # --- MANDATORY STDOUT: [END] (always emitted, even on exception) ---
+        rewards_str = ",".join(f"{r:.2f}" for r in all_rewards)
+        success_str = "true" if success else "false"
+        print(f"[END]   success={success_str} steps={total_steps} rewards={rewards_str}", flush=True)
 
     return final_score
 
@@ -272,7 +278,7 @@ def main():
     print(f"API: {API_BASE_URL}")
     print(f"Model: {MODEL_NAME}")
 
-    llm_client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+    llm_client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
     env_url = os.getenv("ENV_URL", "http://localhost:8000")
 
     scores = {}
