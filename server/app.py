@@ -50,7 +50,7 @@ app = create_app(
 @app.get("/health")
 async def health():
     """Health check endpoint for container orchestration."""
-    return {"status": "ok", "environment": "security_audit_env"}
+    return {"status": "healthy", "environment": "security_audit_env"}
 
 
 # --- Custom Hackathon Endpoints ---
