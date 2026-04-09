@@ -10,13 +10,23 @@ from typing import Any, Dict, List
 
 
 def get_scenario(scenario_id: str) -> Dict[str, Any]:
-    """Get a scenario by ID."""
-    scenarios = {
-        "easy": _scenario_easy(),
-        "medium": _scenario_medium(),
-        "hard": _scenario_hard(),
-    }
-    return scenarios.get(scenario_id, scenarios["easy"])
+    """Get a scenario by ID.
+
+    The 3 fixed IDs (easy/medium/hard) use legacy definitions for backward
+    compatibility with existing tests and evaluator.  Any other ID triggers
+    the procedural generator, producing a unique scenario from a deterministic
+    seed derived from the ID string.
+    """
+    _LEGACY = {"easy": _scenario_easy, "medium": _scenario_medium, "hard": _scenario_hard}
+    if scenario_id in _LEGACY:
+        return _LEGACY[scenario_id]()
+
+    # Dynamic scenario generation for custom IDs
+    try:
+        from .generator import generate_scenario
+    except ImportError:
+        from server.generator import generate_scenario
+    return generate_scenario(scenario_id)
 
 
 def list_scenarios() -> List[Dict[str, str]]:

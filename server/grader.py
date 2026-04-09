@@ -9,65 +9,17 @@ Includes pivoting score, compliance-framework mapping, and report narrative qual
 import re
 from typing import Any, Dict, List, Optional, Set
 
-
-# ---------------------------------------------------------------------------
-# Compliance framework mappings — OWASP category → framework-specific controls
-# ---------------------------------------------------------------------------
-COMPLIANCE_MAPPINGS: Dict[str, Dict[str, List[str]]] = {
-    "PCI-DSS": {
-        "A01:2021": ["PCI-DSS 6.5.8 — Improper Access Control"],
-        "A02:2021": ["PCI-DSS 4.1 — Strong Cryptography", "PCI-DSS 6.5.3 — Insecure Cryptographic Storage"],
-        "A03:2021": ["PCI-DSS 6.5.1 — Injection Flaws"],
-        "A04:2021": ["PCI-DSS 6.5.5 — Improper Error Handling"],
-        "A05:2021": ["PCI-DSS 2.2 — Configuration Standards", "PCI-DSS 6.5.10 — Broken Auth/Session"],
-        "A06:2021": ["PCI-DSS 6.2 — Security Patches"],
-        "A07:2021": ["PCI-DSS 8.2 — User Authentication", "PCI-DSS 2.1 — Default Passwords"],
-        "A08:2021": ["PCI-DSS 6.3.1 — Known Vulnerabilities"],
-        "A09:2021": ["PCI-DSS 10.2 — Audit Trails"],
-        "A10:2021": ["PCI-DSS 6.5.9 — SSRF"],
-    },
-    "SOC2": {
-        "A01:2021": ["CC6.1 — Logical Access Security", "CC6.3 — Role-Based Access"],
-        "A02:2021": ["CC6.7 — Restrict Data Transmission", "C1.1 — Confidentiality Commitments"],
-        "A03:2021": ["CC6.1 — Logical Access Security", "CC6.6 — System Boundaries"],
-        "A04:2021": ["CC8.1 — Change Management", "PI1.1 — Processing Integrity"],
-        "A05:2021": ["CC6.6 — System Boundaries", "CC7.1 — Detect Changes"],
-        "A06:2021": ["CC7.1 — Detect Changes", "CC8.1 — Change Management"],
-        "A07:2021": ["CC6.1 — Logical Access Security", "CC6.2 — Prior to Access"],
-        "A08:2021": ["CC7.1 — Detect Changes", "CC8.1 — Change Management"],
-        "A09:2021": ["CC4.1 — Monitoring Activities", "CC7.2 — System Monitoring"],
-        "A10:2021": ["CC6.6 — System Boundaries", "CC6.1 — Logical Access Security"],
-    },
-    "Generic": {
-        "A01:2021": ["Access Control"],
-        "A02:2021": ["Data Protection", "Encryption"],
-        "A03:2021": ["Input Validation", "Secure Coding"],
-        "A04:2021": ["Secure Design"],
-        "A05:2021": ["Configuration Management"],
-        "A06:2021": ["Patch Management"],
-        "A07:2021": ["Authentication", "Credential Management"],
-        "A08:2021": ["Software Composition Analysis"],
-        "A09:2021": ["Logging and Monitoring"],
-        "A10:2021": ["Network Security"],
-    },
-}
-
-_FRAMEWORK_KEYWORDS = {
-    "PCI-DSS": "PCI-DSS",
-    "pci": "PCI-DSS",
-    "SOC2": "SOC2",
-    "SOC 2": "SOC2",
-    "soc2": "SOC2",
-}
-
-
-def _detect_framework(scenario: Dict[str, Any]) -> str:
-    """Detect compliance framework from scenario metadata."""
-    ctx = scenario.get("compliance_context", "")
-    for keyword, framework in _FRAMEWORK_KEYWORDS.items():
-        if keyword.lower() in ctx.lower():
-            return framework
-    return "Generic"
+# Import compliance data from knowledge base (with fallback)
+try:
+    from .knowledge_base.compliance import COMPLIANCE_MAPPINGS, detect_framework as _detect_framework
+except ImportError:
+    try:
+        from server.knowledge_base.compliance import COMPLIANCE_MAPPINGS, detect_framework as _detect_framework
+    except ImportError:
+        # Minimal fallback if KB not available
+        COMPLIANCE_MAPPINGS = {"Generic": {}}
+        def _detect_framework(scenario):
+            return "Generic"
 
 
 def _owasp_matches(gt_owasp: str, submitted_owasp: str) -> bool:

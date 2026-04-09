@@ -23,11 +23,11 @@ except ImportError:
 
 try:
     from .scenarios import get_scenario, list_scenarios
-    from .tools import TOOL_DEFINITIONS, execute_tool
+    from .tools_engine import TOOL_DEFINITIONS, execute_tool
     from .grader import grade_episode, match_single_finding
 except ImportError:
     from server.scenarios import get_scenario, list_scenarios
-    from server.tools import TOOL_DEFINITIONS, execute_tool
+    from server.tools_engine import TOOL_DEFINITIONS, execute_tool
     from server.grader import grade_episode, match_single_finding
 
 
